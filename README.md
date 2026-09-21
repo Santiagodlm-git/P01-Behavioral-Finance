@@ -59,7 +59,7 @@ df_prices = generar_precios(n_days=500, n_assets=50, seed=2024)
 - [x] Paso 2 — Motor de precios con estructura de factores (`src/prices.py`)
 - [x] Paso 3 — Costos de transacción: comisión + spread (`src/costs.py`)
 - [x] Paso 4 — Regla de decisión de venta (`src/decision_rule.py`)
-- [ ] Paso 5 — Turnover / κ
+- [x] Paso 5 — Turnover / κ
 - [ ] Paso 6 — Correr los 8 escenarios
 - [ ] Paso 7 — Estimador de disposition effect (PGR/PLR)
 - [ ] Paso 8 — Estimador de overconfidence (regresión de turnover)
