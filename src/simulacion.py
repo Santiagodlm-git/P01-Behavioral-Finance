@@ -323,6 +323,17 @@ def simular_escenario(poblacion, df_prices, seed_decisiones, verbose=False,
         # y el cash drag deja de ser un confound de la regresion del Paso 8.
         compradores = np.where(tiene_espacio & (cash > 0))[0]
 
+        # EXPERIMENTO (rama exp/efectos-composicion): el monto objetivo por
+        # posicion se ancla al valor ACTUAL de la cartera y no al capital
+        # inicial W_i. Con el ancla en W_i, cada rotacion vuelve a comprar al
+        # tamano original y el excedente de una posicion que crecio se queda en
+        # caja, de modo que rotar mas equivale a despojarse de la capitalizacion
+        # de las ganancias. Esta es la hipotesis que se pone a prueba.
+        valor_actual = (
+            held_shares * np.where(ocupado_post_venta,
+                                    price_today[np.where(ocupado_post_venta, held_asset, 0)], 0)
+        ).sum(axis=1) + cash
+
         for i in compradores:
             huecos = int(n_i[i]) - int(num_ocupado[i])
             for _ in range(huecos):
@@ -332,7 +343,7 @@ def simular_escenario(poblacion, df_prices, seed_decisiones, verbose=False,
                     break
                 activo_elegido = int(rng_compra_activo.choice(opciones))
 
-                monto_objetivo = W[i] / n_i[i]
+                monto_objetivo = valor_actual[i] / n_i[i]
                 monto_max_por_cash = cash[i] / (1 + TASA_COSTO_TOTAL)
                 monto_final = min(monto_objetivo, monto_max_por_cash)
                 if monto_final <= 0:
