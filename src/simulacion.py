@@ -5,7 +5,7 @@ import time
 from generador_poblacion import generate_population
 from generador_precios import generador_de_precios
 from decision_venta import utilidad_valor
-from turnover import decide_compra, calcular_turnover_barber_odean
+from turnover import calcular_turnover_barber_odean
 
 COMMISSION_BPS = 10.0
 SPREAD_BPS = 5.0
@@ -19,6 +19,8 @@ ALPHA = 0.88
 BETA_EXP = 0.88
 LAM = 2.25
 TEMPERATURA = 0.10
+C_KAPPA = 0.02  # churn de sobreconfianza: probabilidad diaria extra de rotar una
+                # posicion, CIEGA a si va ganando o perdiendo. kappa=1 -> +2 puntos.
 H0 = 0.02  # tasa base de venta diaria de una posicion para un agente sin sesgo
            # (delta=0). Implica una tenencia media de ~50 dias habiles.
 MU_ANNUAL = 0.08
@@ -75,10 +77,10 @@ def simular_escenario(poblacion, df_prices, seed_decisiones, verbose=False):
     N = len(poblacion["delta"])
 
     seed_seq = np.random.SeedSequence(seed_decisiones)
-    seed_init, seed_venta, seed_compra_dado, seed_compra_activo = seed_seq.spawn(4)
+    seed_init, seed_venta, seed_churn, seed_compra_activo = seed_seq.spawn(4)
     rng_init = np.random.default_rng(seed_init)
     rng_venta = np.random.default_rng(seed_venta)
-    rng_compra_dado = np.random.default_rng(seed_compra_dado)
+    rng_churn = np.random.default_rng(seed_churn)
     rng_compra_activo = np.random.default_rng(seed_compra_activo)
 
     held_asset, held_price, held_shares, cash = construir_cartera_inicial(
@@ -87,6 +89,7 @@ def simular_escenario(poblacion, df_prices, seed_decisiones, verbose=False):
 
     delta_col = poblacion["delta"].reshape(-1, 1)  # (N,1), broadcast sobre columnas
     kappa = poblacion["kappa"]
+    prob_churn_col = (C_KAPPA * kappa).reshape(-1, 1)  # (N,1)
     W = poblacion["W"]
     n_i = poblacion["n"]
 
@@ -133,7 +136,16 @@ def simular_escenario(poblacion, df_prices, seed_decisiones, verbose=False):
         # Con brecha = 0 la probabilidad es exactamente H0; el maximo es 2*H0.
         prob_vende = 2 * H0 / (1 + np.exp(-(v_vender - v_continuar) / TEMPERATURA))
         sorteo = rng_venta.random(size=prob_vende.shape)
-        vende = ocupado & (sorteo < prob_vende)
+        vende_disposition = sorteo < prob_vende
+
+        # --- Canal de sobreconfianza (kappa): churn ciego al precio de compra ---
+        # Es un segundo sorteo INDEPENDIENTE que no mira si la posicion va
+        # ganando o perdiendo. Asi kappa mueve la frecuencia de operacion sin
+        # contaminar el estimador de disposition.
+        sorteo_churn = rng_churn.random(size=prob_vende.shape)
+        vende_churn = sorteo_churn < prob_churn_col
+
+        vende = ocupado & (vende_disposition | vende_churn)
 
         # --- Registro para PGR/PLR (Paso 7) ---
         # En los dias en que una cuenta vende ALGO, se clasifican TODAS sus
@@ -184,41 +196,46 @@ def simular_escenario(poblacion, df_prices, seed_decisiones, verbose=False):
         num_ocupado = ocupado_post_venta.sum(axis=1)
         tiene_espacio = num_ocupado < n_i
 
-        intenta_compra = decide_compra(kappa, cash, rng_compra_dado, base_prob=0.05)
-        compra_hoy = intenta_compra & tiene_espacio
-        compradores = np.where(compra_hoy)[0]
+        # Reinversion el MISMO dia: el agente sostiene n_i posiciones. Todo lo
+        # que vendio hoy lo vuelve a colocar hoy en activos elegidos al azar
+        # que no tenga ya. La compra es mecanica y no depende de kappa (kappa
+        # actua en el lado de la venta, arriba). Asi el efectivo no se estaciona
+        # y el cash drag deja de ser un confound de la regresion del Paso 8.
+        compradores = np.where(tiene_espacio & (cash > 0))[0]
 
         for i in compradores:
-            tenidos = set(held_asset[i][held_asset[i] >= 0].tolist())
-            opciones = [a for a in range(n_assets) if a not in tenidos]
-            if not opciones:
-                continue
-            activo_elegido = int(rng_compra_activo.choice(opciones))
+            huecos = int(n_i[i]) - int(num_ocupado[i])
+            for _ in range(huecos):
+                tenidos = set(held_asset[i][held_asset[i] >= 0].tolist())
+                opciones = [a for a in range(n_assets) if a not in tenidos]
+                if not opciones:
+                    break
+                activo_elegido = int(rng_compra_activo.choice(opciones))
 
-            monto_objetivo = W[i] / n_i[i]
-            monto_max_por_cash = cash[i] / (1 + TASA_COSTO_TOTAL)
-            monto_final = min(monto_objetivo, monto_max_por_cash)
-            if monto_final <= 0:
-                continue
+                monto_objetivo = W[i] / n_i[i]
+                monto_max_por_cash = cash[i] / (1 + TASA_COSTO_TOTAL)
+                monto_final = min(monto_objetivo, monto_max_por_cash)
+                if monto_final <= 0:
+                    break
 
-            precio_hoy = price_today[activo_elegido]
-            acciones_compradas = monto_final / precio_hoy
-            costo = monto_final * TASA_COSTO_TOTAL
+                precio_hoy = price_today[activo_elegido]
+                acciones_compradas = monto_final / precio_hoy
+                costo = monto_final * TASA_COSTO_TOTAL
 
-            slot_libre = np.where(held_asset[i] == -1)[0][0]
-            held_asset[i, slot_libre] = activo_elegido
-            held_price[i, slot_libre] = precio_hoy
-            held_shares[i, slot_libre] = acciones_compradas
-            cash[i] -= (monto_final + costo)
+                slot_libre = np.where(held_asset[i] == -1)[0][0]
+                held_asset[i, slot_libre] = activo_elegido
+                held_price[i, slot_libre] = precio_hoy
+                held_shares[i, slot_libre] = acciones_compradas
+                cash[i] -= (monto_final + costo)
 
-            reg_dia.append(day)
-            reg_trader.append(i)
-            reg_activo.append(activo_elegido)
-            reg_tipo.append("compra")
-            reg_acciones.append(acciones_compradas)
-            reg_precio.append(precio_hoy)
-            reg_costo.append(costo)
-            reg_ganancia_pct.append(np.nan)
+                reg_dia.append(day)
+                reg_trader.append(i)
+                reg_activo.append(activo_elegido)
+                reg_tipo.append("compra")
+                reg_acciones.append(acciones_compradas)
+                reg_precio.append(precio_hoy)
+                reg_costo.append(costo)
+                reg_ganancia_pct.append(np.nan)
 
         valor_cartera_diario[day] = (
             held_shares * np.where(held_asset >= 0, price_today[np.where(held_asset >= 0, held_asset, 0)], 0)
