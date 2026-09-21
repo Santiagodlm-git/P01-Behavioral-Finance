@@ -22,7 +22,7 @@ def utilidad_valor(x, alpha=0.88, beta_exp=0.88, lam=2.25):
 
 def decide_venta(precio_actual, precio_compra, delta_i, rng,
                   mu_annual, sigma_annual, dt=1/252,
-                  alpha=0.88, beta_exp=0.88, lam=2.25, temperatura=0.10, h0=0.02):
+                  alpha=0.88, beta_exp=0.88, lam=2.25, temperatura=0.10, h0=0.01):
     """
     Decide si un agente vende una posicion, usando utilidad de punto de referencia.
 

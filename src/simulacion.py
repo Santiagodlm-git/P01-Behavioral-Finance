@@ -21,8 +21,10 @@ LAM = 2.25
 TEMPERATURA = 0.10
 C_KAPPA = 0.02  # churn de sobreconfianza: probabilidad diaria extra de rotar una
                 # posicion, CIEGA a si va ganando o perdiendo. kappa=1 -> +2 puntos.
-H0 = 0.02  # tasa base de venta diaria de una posicion para un agente sin sesgo
-           # (delta=0). Implica una tenencia media de ~50 dias habiles.
+H0 = 0.01  # tasa base de venta diaria de una posicion para un agente sin sesgo
+           # (delta=0). Implica una tenencia media de ~100 dias habiles y un
+           # turnover base del orden de 2.4x anual, cercano al quintil mas
+           # activo de Barber & Odean (~250% anual).
 MU_ANNUAL = 0.08
 SIGMA_ANNUAL = 0.20
 DT = 1 / 252
