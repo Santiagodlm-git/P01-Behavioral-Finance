@@ -125,6 +125,7 @@ def simular_escenario(poblacion, df_prices, seed_decisiones, verbose=False,
     suma_frac_efectivo = np.zeros(N)   # -> fraccion media de la cartera en efectivo
 
     valor_cartera_diario = np.zeros((n_days_mas_1, N))
+    cash_diario = np.zeros((n_days_mas_1, N))   # efectivo por cuenta y dia (Paso 9)
     valor_cartera_diario[0] = (held_shares * np.where(held_asset >= 0, held_price, 0)).sum(axis=1) + cash
 
     t0 = time.time()
@@ -372,6 +373,7 @@ def simular_escenario(poblacion, df_prices, seed_decisiones, verbose=False,
             held_shares * np.where(held_asset >= 0, price_today[np.where(held_asset >= 0, held_asset, 0)], 0)
         ).sum(axis=1) + cash
 
+        cash_diario[day] = cash
         suma_posiciones += (held_asset >= 0).sum(axis=1)
         suma_frac_efectivo += np.divide(cash, valor_cartera_diario[day],
                                         out=np.zeros(N), where=valor_cartera_diario[day] > 0)
@@ -400,6 +402,7 @@ def simular_escenario(poblacion, df_prices, seed_decisiones, verbose=False,
         "posiciones_promedio": suma_posiciones / (n_days_mas_1 - 1),
         "frac_efectivo_promedio": suma_frac_efectivo / (n_days_mas_1 - 1),
         "valor_cartera_diario": valor_cartera_diario,
+        "cash_diario": cash_diario,
     }
 
 
