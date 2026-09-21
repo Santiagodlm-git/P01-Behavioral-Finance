@@ -18,7 +18,9 @@ TASA_COSTO_TOTAL = (COMMISSION_BPS + SPREAD_BPS) / 10_000  # 15 bps, como fracci
 ALPHA = 0.88
 BETA_EXP = 0.88
 LAM = 2.25
-TEMPERATURA = 3.0
+TEMPERATURA = 0.10
+H0 = 0.02  # tasa base de venta diaria de una posicion para un agente sin sesgo
+           # (delta=0). Implica una tenencia media de ~50 dias habiles.
 MU_ANNUAL = 0.08
 SIGMA_ANNUAL = 0.20
 DT = 1 / 252
@@ -114,17 +116,22 @@ def simular_escenario(poblacion, df_prices, seed_decisiones, verbose=False):
         precio_compra = held_price
 
         # --- Decision de VENTA (misma logica del Paso 4, vectorizada) ---
-        x_ahora = precio_actual - precio_compra
-        v_ahora = utilidad_valor(x_ahora, ALPHA, BETA_EXP, LAM)
+        # La utilidad se evalua sobre el RENDIMIENTO, no sobre dolares por accion:
+        # asi ganar 10% pesa igual en una accion de $10 que en una de $1,000.
+        base_compra = np.where(ocupado, precio_compra, 1.0)  # evita dividir entre 0
+        r_ahora = precio_actual / base_compra - 1
+        v_ahora = utilidad_valor(r_ahora, ALPHA, BETA_EXP, LAM)
         v_vender = (1 + delta_col) * v_ahora
 
-        precio_sube = precio_actual * np.exp(MU_ANNUAL * DT + diffusion_diaria)
-        precio_baja = precio_actual * np.exp(MU_ANNUAL * DT - diffusion_diaria)
-        v_sube = utilidad_valor(precio_sube - precio_compra, ALPHA, BETA_EXP, LAM)
-        v_baja = utilidad_valor(precio_baja - precio_compra, ALPHA, BETA_EXP, LAM)
+        r_sube = precio_actual * np.exp(MU_ANNUAL * DT + diffusion_diaria) / base_compra - 1
+        r_baja = precio_actual * np.exp(MU_ANNUAL * DT - diffusion_diaria) / base_compra - 1
+        v_sube = utilidad_valor(r_sube, ALPHA, BETA_EXP, LAM)
+        v_baja = utilidad_valor(r_baja, ALPHA, BETA_EXP, LAM)
         v_continuar = 0.5 * v_sube + 0.5 * v_baja
 
-        prob_vende = 1 / (1 + np.exp(-(v_vender - v_continuar) / TEMPERATURA))
+        # La utilidad MODULA una tasa base H0, no fija la probabilidad desde cero.
+        # Con brecha = 0 la probabilidad es exactamente H0; el maximo es 2*H0.
+        prob_vende = 2 * H0 / (1 + np.exp(-(v_vender - v_continuar) / TEMPERATURA))
         sorteo = rng_venta.random(size=prob_vende.shape)
         vende = ocupado & (sorteo < prob_vende)
 

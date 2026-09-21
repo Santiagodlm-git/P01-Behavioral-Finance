@@ -22,7 +22,7 @@ def utilidad_valor(x, alpha=0.88, beta_exp=0.88, lam=2.25):
 
 def decide_venta(precio_actual, precio_compra, delta_i, rng,
                   mu_annual, sigma_annual, dt=1/252,
-                  alpha=0.88, beta_exp=0.88, lam=2.25, temperatura=3.0):
+                  alpha=0.88, beta_exp=0.88, lam=2.25, temperatura=0.10, h0=0.02):
     """
     Decide si un agente vende una posicion, usando utilidad de punto de referencia.
 
@@ -37,17 +37,17 @@ def decide_venta(precio_actual, precio_compra, delta_i, rng,
     precio_actual = np.asarray(precio_actual, dtype=float)
     precio_compra = np.asarray(precio_compra, dtype=float)
 
-    # --- Utilidad de vender AHORA ---
-    x_ahora = precio_actual - precio_compra
-    v_ahora = utilidad_valor(x_ahora, alpha, beta_exp, lam)
+    # --- Utilidad de vender AHORA (sobre el RENDIMIENTO, no sobre dolares) ---
+    r_ahora = precio_actual / precio_compra - 1
+    v_ahora = utilidad_valor(r_ahora, alpha, beta_exp, lam)
     v_vender = (1 + delta_i) * v_ahora
 
     # --- Valor de CONTINUAR (un dia hacia adelante, CON incertidumbre) ---
     diffusion_diaria = sigma_annual * np.sqrt(dt)
     precio_sube = precio_actual * np.exp(mu_annual * dt + diffusion_diaria)
     precio_baja = precio_actual * np.exp(mu_annual * dt - diffusion_diaria)
-    v_sube = utilidad_valor(precio_sube - precio_compra, alpha, beta_exp, lam)
-    v_baja = utilidad_valor(precio_baja - precio_compra, alpha, beta_exp, lam)
+    v_sube = utilidad_valor(precio_sube / precio_compra - 1, alpha, beta_exp, lam)
+    v_baja = utilidad_valor(precio_baja / precio_compra - 1, alpha, beta_exp, lam)
     v_continuar = 0.5 * v_sube + 0.5 * v_baja
 
     # --- Decision PROBABILISTICA (logit), en vez de un interruptor duro ---
@@ -56,7 +56,7 @@ def decide_venta(precio_actual, precio_compra, delta_i, rng,
     # monotonicidad). La funcion logistica traduce la BRECHA de utilidad en
     # una probabilidad suave; temperatura controla que tan "dura" es esa curva.
     brecha = v_vender - v_continuar
-    prob_vende = 1 / (1 + np.exp(-brecha / temperatura))
+    prob_vende = 2 * h0 / (1 + np.exp(-brecha / temperatura))
 
     return rng.random(size=prob_vende.shape) < prob_vende
 
