@@ -15,3 +15,6 @@ Thumbs.db
 # Resultados pesados / generados (ajusta si quieres versionarlos)
 results/*.csv
 !results/.gitkeep
+
+# Figuras generadas (se regeneran con src/figuras.py)
+report/*.png
