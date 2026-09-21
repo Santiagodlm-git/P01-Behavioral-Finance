@@ -6,6 +6,12 @@ def calcular_costos_transaccion(trade_shares, price, commission_bps=10.0, spread
     """
     Calcula el costo de cada transaccion, separando comision y spread bid-ask.
 
+    NOTA: el motor aplica esta misma tarifa inline, sobre transacciones
+    individuales dentro del loop diario, por eficiencia (ver TASA_COSTO_TOTAL en
+    simulacion.py). Esta funcion opera sobre DataFrames completos de dias x
+    activos y se conserva como la definicion de referencia de la tarifa y como
+    verificacion independiente de que USD y basis points son consistentes.
+
     trade_shares: DataFrame de acciones operadas por dia y activo
                   (positivo = compra, negativo = venta). Mismo shape/index/
                   columns que 'price'.

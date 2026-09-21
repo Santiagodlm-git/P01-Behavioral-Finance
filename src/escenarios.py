@@ -24,6 +24,7 @@ import pandas as pd
 from generador_poblacion import generate_population
 from generador_precios import generador_de_precios
 from simulacion import simular_escenario, TASA_COSTO_TOTAL
+from turnover import calcular_turnover_barber_odean
 
 # ---------------------------------------------------------------------------
 # Parametros globales de la corrida
@@ -142,9 +143,9 @@ def resumen_por_cuenta(poblacion, resultado, df_prices):
     else:
         comprado = vendido = costos = np.zeros(N)
 
-    # Turnover del periodo (definicion de Barber & Odean) y su version anual.
-    turnover_periodo = np.divide(comprado + vendido, 2.0 * valor_promedio,
-                                 out=np.zeros(N), where=valor_promedio > 0)
+    # Turnover del periodo (definicion de Barber & Odean, implementada en
+    # turnover.py) y su version anualizada.
+    turnover_periodo = calcular_turnover_barber_odean(comprado, vendido, valor_promedio)
     turnover_anual = turnover_periodo * (DIAS_POR_ANIO / N_DAYS)
 
     retorno_neto = valor_final / valor_inicial - 1.0

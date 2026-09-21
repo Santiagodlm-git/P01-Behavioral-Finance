@@ -5,7 +5,6 @@ import time
 from generador_poblacion import generate_population
 from generador_precios import generador_de_precios
 from decision_venta import utilidad_valor
-from turnover import calcular_turnover_barber_odean
 
 COMMISSION_BPS = 10.0
 SPREAD_BPS = 5.0

@@ -3,9 +3,16 @@ import numpy as np
 
 def decide_compra(kappa_i, cash_disponible, rng, base_prob=0.05): #Se le pone como base inicial de 0.05, que es la probabilidad de compra base de un inversionista sin sesgo de sobreconfianza (k=0)
     """
-    Regla de decision de compra (reentrada al mercado), impulsada por kappa_i
-    (overconfidence). NO depende de delta_i en ningun calculo -- independencia
-    por construccion respecto al mecanismo de disposition effect.
+    Regla de compra de la PRIMERA version del simulador, impulsada por kappa_i.
+
+    NOTA: el motor ya no la usa. Esta especificacion resulto estar embotellada,
+    porque solo se puede comprar si hay efectivo, el efectivo solo aparece si se
+    vendio antes, y las ventas las gobierna delta_i; en consecuencia kappa no
+    podia mover el turnover de forma independiente. En la version final kappa
+    actua sobre la VENTA, como un canal de churn ciego al precio de compra (ver
+    simulacion.py), y la recompra pasa a ser mecanica. La funcion se conserva
+    porque el reporte documenta ese cambio de diseno y porque su prueba de
+    monotonicidad sigue siendo el registro de como se comportaba.
 
     kappa_i: array de tamaño N (un valor por trader), 0 a 1.
     cash_disponible: array de tamaño N, efectivo disponible ese dia por trader.
