@@ -16,7 +16,7 @@ matplotlib.use("Agg")          # backend sin ventana, para poder guardar a archi
 import matplotlib.pyplot as plt
 import pandas as pd
 
-from escenarios import ESCENARIOS
+from escenarios import ESCENARIOS, CARPETA_RESULTADOS
 from estimadores import (tabla_disposition, conteos_sinteticos,
                           estimar_disposition, valor_teorico)
 from regresion import tabla_overconfidence
@@ -264,7 +264,55 @@ def figura_composicion():
         "tabla_composicion.png", filas_resaltadas=(3,), columnas_negritas=(4,), ancho=14.5)
 
 
+# ---------------------------------------------------------------------------
+# Figura 6 -- Paso 9: donde aparece la causalidad reversa
+# ---------------------------------------------------------------------------
+def figura_causalidad_reversa():
+    det = pd.read_csv(os.path.join(CARPETA_RESULTADOS, "diagnostico_reversa.csv"))
+    encabezados = ["#", "Escenario", "¿La regla mira el precio de compra?",
+                   "β bruto", "t", "¿Significativo?"]
+    filas, resaltar = [], []
+    for i, (_, r) in enumerate(det.iterrows()):
+        num = int(r["escenario"])
+        if r["significativo"] == "si":
+            resaltar.append(i)
+        filas.append([str(num), NOMBRE_CORTO[num],
+                      "Sí" if r["regla_condiciona_en_precio_de_compra"] == "si" else "No",
+                      _fmt(r["beta_bruto"], 5, signo=True), "%.2f" % r["t_bruto"],
+                      "Sí" if r["significativo"] == "si" else "No"])
+
+    return _tabla_png(
+        encabezados, filas,
+        "Dónde aparece la causalidad reversa",
+        "La pendiente bruta solo es distinta de cero donde la regla de venta condiciona sobre el precio de compra "
+        "o sobre el movimiento reciente del precio. El escenario 6 es la excepción y se explica en el texto.",
+        "tabla_reversa.png", filas_resaltadas=resaltar, columnas_negritas=(3,), ancho=14.5)
+
+
+# ---------------------------------------------------------------------------
+# Figura 7 -- Paso 10: independencia
+# ---------------------------------------------------------------------------
+def figura_independencia():
+    mec = pd.read_csv(os.path.join(CARPETA_RESULTADOS, "independencia_mecanismo.csv"))
+    encabezados = ["Medida", "Cuartil δ bajo", "Cuartil δ alto", "Cambio", "corr con δ"]
+    filas = []
+    for _, r in mec.iterrows():
+        v1, v2 = r["cuartil_delta_bajo"], r["cuartil_delta_alto"]
+        fmt = (lambda x: "%,.0f".replace(",", "") % x) if abs(v1) > 1000 else (lambda x: "%.3f" % x)
+        filas.append([r["medida"], fmt(v1), fmt(v2),
+                      "%+.1f%%" % r["cambio_pct"], "%+.4f" % r["corr_con_delta"]])
+
+    return _tabla_png(
+        encabezados, filas,
+        "Por dónde mueve δ al turnover (κ fijo para toda la población)",
+        "El turnover es un cociente: δ casi no cambia el número de operaciones, reduce el valor rotado "
+        "y aumenta levemente el tamaño de la cartera. El efecto neto sobre el cociente es negativo.",
+        "tabla_independencia.png", filas_resaltadas=(1,), columnas_negritas=(3,), ancho=14.0,
+        columna_texto=0)
+
+
 if __name__ == "__main__":
     for f in (figura_disposition, figura_robustez, figura_validacion,
-              figura_overconfidence, figura_composicion):
+              figura_overconfidence, figura_composicion,
+              figura_causalidad_reversa, figura_independencia):
         print("generada:", os.path.basename(f()))

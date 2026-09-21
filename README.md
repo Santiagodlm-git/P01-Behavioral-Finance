@@ -29,6 +29,8 @@ P01-Behavioral-Finance/
 │   ├── escenarios.py             # Paso 6 — corre los 8 escenarios y guarda las tablas
 │   ├── estimadores.py            # Paso 7 — PGR/PLR con bootstrap por cuenta
 │   ├── regresion.py              # Paso 8 — regresión de turnover con errores HC1
+│   ├── diagnostico.py            # Paso 9 — las cuatro causas no conductuales
+│   ├── independencia.py          # Paso 10 — independencia de δ y κ
 │   └── figuras.py                # Figuras del reporte (PNG generados por código)
 ├── notebooks/                    # Exploración y análisis
 ├── results/                      # CSV generados (fuera de git: son derivados)
@@ -49,7 +51,9 @@ cd src
 python escenarios.py     # corre los 8 escenarios -> results/*.csv     (~1.5 min)
 python estimadores.py    # Paso 7: PGR/PLR + bootstrap -> results/tabla_disposition.csv
 python regresion.py      # Paso 8: regresión bruto/neto -> results/tabla_overconfidence.csv
-python figuras.py        # las 5 tablas del reporte -> report/*.png
+python diagnostico.py    # Paso 9: las cuatro trampas -> results/diagnostico_*.csv
+python independencia.py  # Paso 10: independencia de δ y κ           (~1 min)
+python figuras.py        # las 7 tablas del reporte -> report/*.png
 ```
 
 El orden importa: `escenarios.py` produce los CSV que consumen los otros tres.
@@ -79,8 +83,8 @@ resultado = simular_escenario(poblacion, precios, seed_decisiones=501)
 - [x] Paso 6 — Los 8 escenarios, confounds incluidos (`simulacion.py`, `escenarios.py`)
 - [x] Paso 7 — Estimador PGR/PLR con bootstrap por cuenta (`estimadores.py`)
 - [x] Paso 8 — Regresión de turnover con errores HC1 (`regresion.py`)
-- [ ] Paso 9 — Diagnóstico de confounds
-- [ ] Paso 10 — Verificación de independencia δ/κ
+- [x] Paso 9 — Diagnóstico de las cuatro causas no conductuales (`diagnostico.py`)
+- [x] Paso 10 — Independencia de δ y κ (`independencia.py`)
 
 ## Parámetros de calibración
 
