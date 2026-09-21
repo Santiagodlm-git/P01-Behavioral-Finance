@@ -19,6 +19,12 @@ ALPHA = 0.88
 BETA_EXP = 0.88
 LAM = 2.25
 TEMPERATURA = 0.10
+# --- Parametros de los confounds (escenarios 7 y 8) ---
+DIAS_REBALANCEO = 21     # revision mensual de pesos
+BANDA_REBALANCEO = 0.05  # solo rebalancea si el peso se desvia mas de 5% del objetivo
+VENTANA_REVERSION = 21   # ventana del rendimiento reciente en el que cree el agente
+THETA_REVERSION = 3.0    # intensidad de la creencia en reversion
+
 C_KAPPA = 0.02  # churn de sobreconfianza: probabilidad diaria extra de rotar una
                 # posicion, CIEGA a si va ganando o perdiendo. kappa=1 -> +2 puntos.
 H0 = 0.01  # tasa base de venta diaria de una posicion para un agente sin sesgo
@@ -64,7 +70,8 @@ def construir_cartera_inicial(poblacion, price_day0, rng):
     return held_asset, held_price, held_shares, cash
 
 
-def simular_escenario(poblacion, df_prices, seed_decisiones, verbose=False):
+def simular_escenario(poblacion, df_prices, seed_decisiones, verbose=False,
+                       confound=None):
     """
     Corre la simulacion dia por dia para UNA poblacion ya generada y UN
     universo de precios ya generado (Opcion A: mismos precios para los 8
@@ -99,6 +106,7 @@ def simular_escenario(poblacion, df_prices, seed_decisiones, verbose=False):
 
     reg_dia, reg_trader, reg_activo, reg_tipo = [], [], [], []
     reg_acciones, reg_precio, reg_costo, reg_ganancia_pct = [], [], [], []
+    reg_motivo = []  # regla | rebalanceo | reinversion
 
     # Contadores de las cuatro cajas del estimador de disposition (Paso 7).
     # Se acumulan por cuenta para poder hacer bootstrap POR CUENTA despues.
@@ -107,6 +115,11 @@ def simular_escenario(poblacion, df_prices, seed_decisiones, verbose=False):
     cnt_Lr = np.zeros(N, dtype=np.int64)   # perdidas realizadas
     cnt_Lp = np.zeros(N, dtype=np.int64)   # perdidas en papel (no vendidas)
     cnt_empate = np.zeros(N, dtype=np.int64)  # posicion exactamente en su precio de compra
+    # Realizaciones que vinieron de un recorte PARCIAL (solo con el confound de
+    # rebalanceo). Van incluidas en cnt_Gr / cnt_Lr; se llevan aparte para poder
+    # recalcular PGR y PLR excluyendolas, como hace Odean en su prueba de robustez.
+    cnt_Gr_parcial = np.zeros(N, dtype=np.int64)
+    cnt_Lr_parcial = np.zeros(N, dtype=np.int64)
 
     # Acumuladores para los controles X_i de la regresion del Paso 8.
     suma_posiciones = np.zeros(N)      # -> posiciones promedio por cuenta
@@ -138,9 +151,22 @@ def simular_escenario(poblacion, df_prices, seed_decisiones, verbose=False):
         v_baja = utilidad_valor(r_baja, ALPHA, BETA_EXP, LAM)
         v_continuar = 0.5 * v_sube + 0.5 * v_baja
 
+        # Confound de creencia en reversion (escenario 8): el agente cree que lo
+        # que subio en las ultimas semanas va a bajar, y por eso lo vende. La
+        # senal es el rendimiento RECIENTE del activo, no la ganancia contra el
+        # precio de compra: es una creencia sobre precios futuros, no una
+        # preferencia por realizar ganancias. Y la creencia es falsa, porque los
+        # precios son independientes, asi que no hay informacion filtrada.
+        senal_reversion = 0.0
+        if confound == "reversion":
+            dia_ref = max(day - VENTANA_REVERSION, 0)
+            precio_pasado = price_matrix[dia_ref][asset_idx_seguro]
+            rend_reciente = precio_actual / precio_pasado - 1.0
+            senal_reversion = THETA_REVERSION * rend_reciente
+
         # La utilidad MODULA una tasa base H0, no fija la probabilidad desde cero.
         # Con brecha = 0 la probabilidad es exactamente H0; el maximo es 2*H0.
-        prob_vende = 2 * H0 / (1 + np.exp(-(v_vender - v_continuar) / TEMPERATURA))
+        prob_vende = 2 * H0 / (1 + np.exp(-(v_vender - v_continuar + senal_reversion) / TEMPERATURA))
         sorteo = rng_venta.random(size=prob_vende.shape)
         vende_disposition = sorteo < prob_vende
 
@@ -153,21 +179,42 @@ def simular_escenario(poblacion, df_prices, seed_decisiones, verbose=False):
 
         vende = ocupado & (vende_disposition | vende_churn)
 
+        # --- Confound de rebalanceo (escenario 7) ---
+        # Cada DIAS_REBALANCEO el agente revisa sus pesos contra el objetivo de
+        # partes iguales (1/n_i). Recorta PARCIALMENTE lo que crecio por encima
+        # de la banda y repone lo que se encogio por debajo. Es una regla de
+        # gestion de riesgo, no una preferencia: no mira si la posicion va
+        # ganando o perdiendo contra su precio de compra, solo su peso. Aun asi
+        # recorta sistematicamente lo que subio, que es lo que el estimador de
+        # disposition va a leer como sesgo.
+        recorta = np.zeros_like(vende)
+        valor_objetivo = np.zeros((N, 1))
+        valor_posicion = np.zeros_like(held_shares)
+        if confound == "rebalanceo" and day % DIAS_REBALANCEO == 0:
+            valor_posicion = np.where(ocupado, held_shares * precio_actual, 0.0)
+            valor_total = valor_posicion.sum(axis=1) + cash
+            valor_objetivo = (valor_total / n_i).reshape(-1, 1)
+            recorta = ocupado & ~vende & (valor_posicion > (1 + BANDA_REBALANCEO) * valor_objetivo)
+
+        realiza = vende | recorta
+
         # --- Registro para PGR/PLR (Paso 7) ---
         # En los dias en que una cuenta vende ALGO, se clasifican TODAS sus
         # posiciones vivas contra su precio de compra: vendida o retenida,
         # ganancia o perdida. Los dias sin ventas no aportan a ningun conteo.
         # Va ANTES de vaciar los slots, porque despues la informacion se pierde.
-        vendio_hoy = vende.any(axis=1)
+        vendio_hoy = realiza.any(axis=1)
         if vendio_hoy.any():
             en_juego = ocupado & vendio_hoy[:, None]
             ganancia = precio_actual > precio_compra
             perdida = precio_actual < precio_compra
-            cnt_Gr += (en_juego & ganancia & vende).sum(axis=1)
-            cnt_Gp += (en_juego & ganancia & ~vende).sum(axis=1)
-            cnt_Lr += (en_juego & perdida & vende).sum(axis=1)
-            cnt_Lp += (en_juego & perdida & ~vende).sum(axis=1)
+            cnt_Gr += (en_juego & ganancia & realiza).sum(axis=1)
+            cnt_Gp += (en_juego & ganancia & ~realiza).sum(axis=1)
+            cnt_Lr += (en_juego & perdida & realiza).sum(axis=1)
+            cnt_Lp += (en_juego & perdida & ~realiza).sum(axis=1)
             cnt_empate += (en_juego & ~ganancia & ~perdida).sum(axis=1)
+            cnt_Gr_parcial += (en_juego & ganancia & recorta).sum(axis=1)
+            cnt_Lr_parcial += (en_juego & perdida & recorta).sum(axis=1)
 
         if vende.any():
             tr_idx, slot_idx = np.where(vende)
@@ -192,6 +239,7 @@ def simular_escenario(poblacion, df_prices, seed_decisiones, verbose=False):
             reg_precio.extend(precio_venta.tolist())
             reg_costo.extend(costo.tolist())
             reg_ganancia_pct.extend(ganancia_pct.tolist())
+            reg_motivo.extend(["regla"] * len(tr_idx))
 
             held_asset[tr_idx, slot_idx] = -1
             held_price[tr_idx, slot_idx] = 0.0
@@ -201,6 +249,72 @@ def simular_escenario(poblacion, df_prices, seed_decisiones, verbose=False):
         ocupado_post_venta = held_asset >= 0
         num_ocupado = ocupado_post_venta.sum(axis=1)
         tiene_espacio = num_ocupado < n_i
+
+        # --- Ejecucion de los recortes parciales del rebalanceo ---
+        # Se venden solo las acciones que exceden el objetivo. El precio de
+        # compra registrado NO cambia: las acciones que quedan conservan su
+        # costo base original (criterio de costo promedio, equivalente a FIFO
+        # aqui porque cada posicion se abrio en una sola compra salvo las
+        # reposiciones, que si promedian).
+        if recorta.any():
+            tr_idx, slot_idx = np.where(recorta)
+            precio_r = precio_actual[tr_idx, slot_idx]
+            precio_orig_r = held_price[tr_idx, slot_idx]
+            exceso_usd = valor_posicion[tr_idx, slot_idx] - valor_objetivo[tr_idx, 0]
+            acciones_r = exceso_usd / precio_r
+            costo_r = exceso_usd * TASA_COSTO_TOTAL
+
+            np.add.at(cash, tr_idx, exceso_usd - costo_r)
+            held_shares[tr_idx, slot_idx] -= acciones_r
+
+            reg_dia.extend([day] * len(tr_idx))
+            reg_trader.extend(tr_idx.tolist())
+            reg_activo.extend(held_asset[tr_idx, slot_idx].tolist())
+            reg_tipo.extend(["venta"] * len(tr_idx))
+            reg_acciones.extend((-acciones_r).tolist())
+            reg_precio.extend(precio_r.tolist())
+            reg_costo.extend(costo_r.tolist())
+            reg_ganancia_pct.extend(((precio_r - precio_orig_r) / precio_orig_r).tolist())
+            reg_motivo.extend(["rebalanceo"] * len(tr_idx))
+
+        # --- Reposicion de las posiciones que quedaron por debajo del objetivo ---
+        if confound == "rebalanceo" and day % DIAS_REBALANCEO == 0:
+            repone = ocupado & ~realiza & (valor_posicion < (1 - BANDA_REBALANCEO) * valor_objetivo)
+            if repone.any():
+                tr_idx, slot_idx = np.where(repone)
+                falta = valor_objetivo[tr_idx, 0] - valor_posicion[tr_idx, slot_idx]
+
+                # Si el efectivo no alcanza para todas las reposiciones de un
+                # trader, se reparte a prorrata entre ellas.
+                necesita = np.zeros(N)
+                np.add.at(necesita, tr_idx, falta * (1 + TASA_COSTO_TOTAL))
+                factor = np.divide(cash, necesita, out=np.zeros(N), where=necesita > 0)
+                monto = falta * np.minimum(factor, 1.0)[tr_idx]
+
+                precio_c = precio_actual[tr_idx, slot_idx]
+                acciones_c = monto / precio_c
+                costo_c = monto * TASA_COSTO_TOTAL
+                np.add.at(cash, tr_idx, -(monto + costo_c))
+
+                # Al comprar mas de una posicion que ya se tiene, el costo base
+                # pasa a ser el promedio ponderado de ambas compras.
+                acc_previas = held_shares[tr_idx, slot_idx]
+                precio_prev = held_price[tr_idx, slot_idx]
+                acc_total = acc_previas + acciones_c
+                held_price[tr_idx, slot_idx] = np.divide(
+                    acc_previas * precio_prev + acciones_c * precio_c, acc_total,
+                    out=precio_prev.copy(), where=acc_total > 0)
+                held_shares[tr_idx, slot_idx] = acc_total
+
+                reg_dia.extend([day] * len(tr_idx))
+                reg_trader.extend(tr_idx.tolist())
+                reg_activo.extend(held_asset[tr_idx, slot_idx].tolist())
+                reg_tipo.extend(["compra"] * len(tr_idx))
+                reg_acciones.extend(acciones_c.tolist())
+                reg_precio.extend(precio_c.tolist())
+                reg_costo.extend(costo_c.tolist())
+                reg_ganancia_pct.extend([np.nan] * len(tr_idx))
+                reg_motivo.extend(["rebalanceo"] * len(tr_idx))
 
         # Reinversion el MISMO dia: el agente sostiene n_i posiciones. Todo lo
         # que vendio hoy lo vuelve a colocar hoy en activos elegidos al azar
@@ -242,6 +356,7 @@ def simular_escenario(poblacion, df_prices, seed_decisiones, verbose=False):
                 reg_precio.append(precio_hoy)
                 reg_costo.append(costo)
                 reg_ganancia_pct.append(np.nan)
+                reg_motivo.append("reinversion")
 
         valor_cartera_diario[day] = (
             held_shares * np.where(held_asset >= 0, price_today[np.where(held_asset >= 0, held_asset, 0)], 0)
@@ -254,7 +369,7 @@ def simular_escenario(poblacion, df_prices, seed_decisiones, verbose=False):
     transacciones = pd.DataFrame({
         "dia": reg_dia, "trader": reg_trader, "activo": reg_activo, "tipo": reg_tipo,
         "acciones": reg_acciones, "precio": reg_precio, "costo_usd": reg_costo,
-        "ganancia_pct": reg_ganancia_pct,
+        "ganancia_pct": reg_ganancia_pct, "motivo": reg_motivo,
     })
 
     if verbose:
@@ -264,6 +379,7 @@ def simular_escenario(poblacion, df_prices, seed_decisiones, verbose=False):
         "trader": np.arange(N),
         "G_r": cnt_Gr, "G_p": cnt_Gp, "L_r": cnt_Lr, "L_p": cnt_Lp,
         "empates": cnt_empate,
+        "G_r_parcial": cnt_Gr_parcial, "L_r_parcial": cnt_Lr_parcial,
     })
 
     return {

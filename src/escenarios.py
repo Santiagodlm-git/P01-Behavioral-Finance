@@ -181,9 +181,21 @@ def pgr_plr_agregado(conteos):
     Lr, Lp = conteos["L_r"].sum(), conteos["L_p"].sum()
     pgr = Gr / (Gr + Gp) if (Gr + Gp) else np.nan
     plr = Lr / (Lr + Lp) if (Lr + Lp) else np.nan
+
+    # Robustez: mismos conteos excluyendo las realizaciones parciales, que solo
+    # existen cuando el confound de rebalanceo esta activo. Es la prueba que usa
+    # Odean para descartar que el efecto venga de reajustes de cartera.
+    Grp, Lrp = conteos["G_r_parcial"].sum(), conteos["L_r_parcial"].sum()
+    Gr_s, Lr_s = Gr - Grp, Lr - Lrp
+    pgr_s = Gr_s / (Gr_s + Gp) if (Gr_s + Gp) else np.nan
+    plr_s = Lr_s / (Lr_s + Lp) if (Lr_s + Lp) else np.nan
+
     return {"G_r": Gr, "G_p": Gp, "L_r": Lr, "L_p": Lp,
             "PGR": pgr, "PLR": plr, "PGR_menos_PLR": pgr - plr,
-            "PGR_sobre_PLR": pgr / plr if plr else np.nan}
+            "PGR_sobre_PLR": pgr / plr if plr else np.nan,
+            "realizaciones_parciales": Grp + Lrp,
+            "PGR_sin_parciales": pgr_s, "PLR_sin_parciales": plr_s,
+            "dif_sin_parciales": pgr_s - plr_s}
 
 
 # ---------------------------------------------------------------------------
@@ -196,17 +208,13 @@ def correr_escenario(num, df_prices, verbose=True):
     """
     cfg = configuracion(num)
 
-    if cfg["confound"] is not None:
-        raise NotImplementedError(
-            "El escenario %d requiere el confound '%s', que todavia no esta "
-            "implementado en el motor." % (cfg["num"], cfg["confound"]))
-
     poblacion = generate_population(
         N=N_TRADERS, delta_center=cfg["delta"], kappa_center=cfg["kappa"],
         seed=SEED_POBLACION + cfg["num"])
 
     resultado = simular_escenario(
-        poblacion, df_prices, seed_decisiones=SEED_DECISIONES + cfg["num"])
+        poblacion, df_prices, seed_decisiones=SEED_DECISIONES + cfg["num"],
+        confound=cfg["confound"])
 
     conteos = resultado["conteos_pgr_plr"]
     resumen = resumen_por_cuenta(poblacion, resultado, df_prices)
