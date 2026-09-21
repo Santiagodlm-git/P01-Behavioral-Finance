@@ -93,6 +93,14 @@ def simular_escenario(poblacion, df_prices, seed_decisiones, verbose=False):
     reg_dia, reg_trader, reg_activo, reg_tipo = [], [], [], []
     reg_acciones, reg_precio, reg_costo, reg_ganancia_pct = [], [], [], []
 
+    # Contadores de las cuatro cajas del estimador de disposition (Paso 7).
+    # Se acumulan por cuenta para poder hacer bootstrap POR CUENTA despues.
+    cnt_Gr = np.zeros(N, dtype=np.int64)   # ganancias realizadas
+    cnt_Gp = np.zeros(N, dtype=np.int64)   # ganancias en papel (no vendidas)
+    cnt_Lr = np.zeros(N, dtype=np.int64)   # perdidas realizadas
+    cnt_Lp = np.zeros(N, dtype=np.int64)   # perdidas en papel (no vendidas)
+    cnt_empate = np.zeros(N, dtype=np.int64)  # posicion exactamente en su precio de compra
+
     valor_cartera_diario = np.zeros((n_days_mas_1, N))
     valor_cartera_diario[0] = (held_shares * np.where(held_asset >= 0, held_price, 0)).sum(axis=1) + cash
 
@@ -119,6 +127,22 @@ def simular_escenario(poblacion, df_prices, seed_decisiones, verbose=False):
         prob_vende = 1 / (1 + np.exp(-(v_vender - v_continuar) / TEMPERATURA))
         sorteo = rng_venta.random(size=prob_vende.shape)
         vende = ocupado & (sorteo < prob_vende)
+
+        # --- Registro para PGR/PLR (Paso 7) ---
+        # En los dias en que una cuenta vende ALGO, se clasifican TODAS sus
+        # posiciones vivas contra su precio de compra: vendida o retenida,
+        # ganancia o perdida. Los dias sin ventas no aportan a ningun conteo.
+        # Va ANTES de vaciar los slots, porque despues la informacion se pierde.
+        vendio_hoy = vende.any(axis=1)
+        if vendio_hoy.any():
+            en_juego = ocupado & vendio_hoy[:, None]
+            ganancia = precio_actual > precio_compra
+            perdida = precio_actual < precio_compra
+            cnt_Gr += (en_juego & ganancia & vende).sum(axis=1)
+            cnt_Gp += (en_juego & ganancia & ~vende).sum(axis=1)
+            cnt_Lr += (en_juego & perdida & vende).sum(axis=1)
+            cnt_Lp += (en_juego & perdida & ~vende).sum(axis=1)
+            cnt_empate += (en_juego & ~ganancia & ~perdida).sum(axis=1)
 
         if vende.any():
             tr_idx, slot_idx = np.where(vende)
@@ -202,8 +226,15 @@ def simular_escenario(poblacion, df_prices, seed_decisiones, verbose=False):
     if verbose:
         print(f"Simulacion completa en {time.time()-t0:.1f}s -- {len(transacciones)} transacciones generadas")
 
+    conteos_pgr_plr = pd.DataFrame({
+        "trader": np.arange(N),
+        "G_r": cnt_Gr, "G_p": cnt_Gp, "L_r": cnt_Lr, "L_p": cnt_Lp,
+        "empates": cnt_empate,
+    })
+
     return {
         "transacciones": transacciones,
+        "conteos_pgr_plr": conteos_pgr_plr,
         "held_asset": held_asset, "held_price": held_price, "held_shares": held_shares,
         "cash_final": cash,
         "valor_cartera_diario": valor_cartera_diario,
