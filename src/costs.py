@@ -22,9 +22,16 @@ def calcular_costos_transaccion(trade_shares, price, commission_bps=10.0, spread
     """
     if trade_shares.shape != price.shape:
         raise ValueError("trade_shares y price deben tener la misma forma (mismos dias y activos).")
+    if not trade_shares.index.equals(price.index):
+        raise ValueError(
+            "trade_shares y price tienen la misma forma pero indices distintos "
+            "-- pandas alinearia por etiqueta y produciria NaN silenciosos. "
+            "Reindexa o resetea el indice antes de llamar a esta funcion."
+        )
+    if not trade_shares.columns.equals(price.columns):
+        raise ValueError("trade_shares y price deben tener las mismas columnas, en el mismo orden.")
 
     dollar_volume = trade_shares.abs() * price
-
     commission_usd = dollar_volume * (commission_bps / 10_000)
     spread_usd = dollar_volume * (spread_bps / 10_000)
     total_cost_usd = commission_usd + spread_usd
@@ -35,6 +42,7 @@ def calcular_costos_transaccion(trade_shares, price, commission_bps=10.0, spread
         "spread_usd": spread_usd,
         "total_cost_usd": total_cost_usd,
     }
+        
 
 
 if __name__ == "__main__":

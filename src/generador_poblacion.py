@@ -9,10 +9,9 @@ def _beta_centered(rng, n, center, concentration=20.0):
     """
     if center <= 0:
         return np.zeros(n)
-    a = center * concentration
-    b = (1 - center) * concentration
-    return rng.beta(a, b, size=n)
-
+    a = center * concentration #Pasa el número de centro y concentración a valores que necesita la distribución beta
+    b = (1 - center) * concentration #Aqui igual 
+    return rng.beta(a, b, size=n) #Esta ahora si es la funcion que genera los valores al azar
 
 def generate_population(N, delta_center, kappa_center, seed,
                          W_min=10_000, W_max=500_000,
@@ -22,19 +21,21 @@ def generate_population(N, delta_center, kappa_center, seed,
 
     delta_center, kappa_center: valores centrales que vienen de la tabla
         de escenarios (ej. 0, 0.3, 0.8).
-    seed: semilla maestra única para todo el escenario (reproducibilidad).
+    seed: semilla maestra única para todo el escenario.
 
     Regresa un dict con 4 arreglos: delta, kappa, W, n -- uno por trader.
     """
-    # Una seed maestra -> 4 sub-semillas independientes, una por variable.
+    # Una seed maestra que genera 4 sub-semillas, una por variable para garantizar independencia.
     seed_seq = np.random.SeedSequence(seed)
     seed_delta, seed_kappa, seed_W, seed_n = seed_seq.spawn(4)
 
+    #Estas son las 4 maquinas generadoras de numeros aleatorios, cada una con su propia semilla.
     rng_delta = np.random.default_rng(seed_delta)
     rng_kappa = np.random.default_rng(seed_kappa)
     rng_W = np.random.default_rng(seed_W)
     rng_n = np.random.default_rng(seed_n)
 
+    #Se usa la funcion _beta_centered para generar los valores de delta y kappa, que son independientes entre si.
     delta = _beta_centered(rng_delta, N, delta_center)
     kappa = _beta_centered(rng_kappa, N, kappa_center)
 
