@@ -17,18 +17,19 @@ recuperan el parámetro inyectado.
 ## Estructura del repo
 
 ```
-disposition-overconfidence-sim/
-├── src/                    # Módulos reutilizables del simulador
-│   ├── population.py       # Generación de la población de traders (δ, κ, W, n)
-│   ├── prices.py            # Motor de precios (GBM + estructura de factores)
-│   ├── costs.py              # Comisión + spread bid-ask
-│   ├── decision_rule.py      # Regla de venta (utilidad de punto de referencia)
-│   └── estimators.py         # [pendiente] PGR/PLR y regresión de overconfidence
-├── scenarios/
-│   └── run_all_scenarios.py  # [pendiente] corre los 8 escenarios del proyecto
-├── notebooks/                # Notebooks de exploración y análisis
-├── results/                  # Tablas de resultados generadas (CSV, etc.)
-├── report/                   # Reporte final escrito
+P01-Behavioral-Finance/
+├── src/                          # Módulos del simulador
+│   ├── generador_poblacion.py    # Paso 1 — población de traders (δ, κ, W, n)
+│   ├── generador_precios.py      # Paso 2 — precios (GBM + estructura de factores)
+│   ├── costs.py                  # Paso 3 — comisión + spread bid-ask
+│   ├── decision_venta.py         # Paso 4 — regla de venta (utilidad de punto de referencia)
+│   ├── turnover.py               # Paso 5 — fórmula de turnover (Barber & Odean)
+│   ├── simulacion.py             # Paso 6 — motor: corre UN escenario día por día
+│   ├── escenarios.py             # Paso 6 — corredor de los 8 escenarios + tablas
+│   └── estimadores.py            # [pendiente] Pasos 7 y 8
+├── notebooks/                    # Notebooks de exploración y análisis
+├── results/                      # Tablas generadas (CSV, ignoradas por git)
+├── report/                       # Reporte final escrito
 ├── requirements.txt
 └── README.md
 ```
@@ -44,13 +45,17 @@ pip install -r requirements.txt
 Cada módulo en `src/` es independiente y reutilizable — por ejemplo:
 
 ```python
-from src.population import generate_population
-from src.prices import generar_precios
-from src.decision_rule import decide_venta
-from src.costs import calcular_costos_transaccion
+# Los módulos se importan entre sí por nombre simple, así que se trabaja
+# desde la carpeta src/.
+from generador_poblacion import generate_population
+from generador_precios import generador_de_precios
+from simulacion import simular_escenario
 
-pop = generate_population(N=1000, delta_center=0.8, kappa_center=0.0, seed=12345)
-df_prices = generar_precios(n_days=500, n_assets=50, seed=2024)
+poblacion = generate_population(N=1000, delta_center=0.8, kappa_center=0.0, seed=101)
+precios = generador_de_precios(n_days=500, n_assets=50, initial_price=100.0,
+                               mu_annual=0.08, sigma_annual=0.20,
+                               sigma_market_annual=0.15, seed=2024)
+resultado = simular_escenario(poblacion, precios, seed_decisiones=501)
 ```
 
 ## Estado del proyecto
@@ -60,7 +65,8 @@ df_prices = generar_precios(n_days=500, n_assets=50, seed=2024)
 - [x] Paso 3 — Costos de transacción: comisión + spread (`src/costs.py`)
 - [x] Paso 4 — Regla de decisión de venta (`src/decision_rule.py`)
 - [x] Paso 5 — Turnover / κ
-- [ ] Paso 6 — Correr los 8 escenarios
+- [~] Paso 6 — Correr los 8 escenarios (`src/escenarios.py`): escenarios 1-6
+      corriendo y guardando resultados; 7 y 8 pendientes del diseño de los confounds
 - [ ] Paso 7 — Estimador de disposition effect (PGR/PLR)
 - [ ] Paso 8 — Estimador de overconfidence (regresión de turnover)
 - [ ] Paso 9 — Diagnóstico de confounds

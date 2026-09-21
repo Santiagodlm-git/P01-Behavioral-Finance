@@ -108,6 +108,10 @@ def simular_escenario(poblacion, df_prices, seed_decisiones, verbose=False):
     cnt_Lp = np.zeros(N, dtype=np.int64)   # perdidas en papel (no vendidas)
     cnt_empate = np.zeros(N, dtype=np.int64)  # posicion exactamente en su precio de compra
 
+    # Acumuladores para los controles X_i de la regresion del Paso 8.
+    suma_posiciones = np.zeros(N)      # -> posiciones promedio por cuenta
+    suma_frac_efectivo = np.zeros(N)   # -> fraccion media de la cartera en efectivo
+
     valor_cartera_diario = np.zeros((n_days_mas_1, N))
     valor_cartera_diario[0] = (held_shares * np.where(held_asset >= 0, held_price, 0)).sum(axis=1) + cash
 
@@ -243,6 +247,10 @@ def simular_escenario(poblacion, df_prices, seed_decisiones, verbose=False):
             held_shares * np.where(held_asset >= 0, price_today[np.where(held_asset >= 0, held_asset, 0)], 0)
         ).sum(axis=1) + cash
 
+        suma_posiciones += (held_asset >= 0).sum(axis=1)
+        suma_frac_efectivo += np.divide(cash, valor_cartera_diario[day],
+                                        out=np.zeros(N), where=valor_cartera_diario[day] > 0)
+
     transacciones = pd.DataFrame({
         "dia": reg_dia, "trader": reg_trader, "activo": reg_activo, "tipo": reg_tipo,
         "acciones": reg_acciones, "precio": reg_precio, "costo_usd": reg_costo,
@@ -263,6 +271,8 @@ def simular_escenario(poblacion, df_prices, seed_decisiones, verbose=False):
         "conteos_pgr_plr": conteos_pgr_plr,
         "held_asset": held_asset, "held_price": held_price, "held_shares": held_shares,
         "cash_final": cash,
+        "posiciones_promedio": suma_posiciones / (n_days_mas_1 - 1),
+        "frac_efectivo_promedio": suma_frac_efectivo / (n_days_mas_1 - 1),
         "valor_cartera_diario": valor_cartera_diario,
     }
 
