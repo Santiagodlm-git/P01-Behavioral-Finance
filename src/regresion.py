@@ -159,6 +159,23 @@ def regresion_rendimiento(datos, columna, controles=CONTROLES):
     return ols_hc1(datos[columna].to_numpy(dtype=float), X, nombres)
 
 
+def regresion_contraste(datos, controles=CONTROLES):
+    """
+    Regresa la DIFERENCIA de rendimientos (neto menos bruto) sobre el turnover.
+
+    Por que vale la pena estimarla por separado: los coeficientes bruto y neto
+    se estiman cada uno con el ruido de los rendimientos entre cuentas, que es
+    grande. Pero la diferencia entre ambos rendimientos es, cuenta por cuenta,
+    exactamente el costo pagado, sin ruido de mercado. Estimar el contraste de
+    forma directa da el mismo numero que restar los dos coeficientes, pero con
+    su propio error estandar, que es varios ordenes de magnitud menor. Es la
+    manera correcta de reportar que la contabilidad de costos cierra.
+    """
+    diferencia = (datos["retorno_neto"] - datos["retorno_bruto"]).to_numpy(dtype=float)
+    X, nombres = matriz_diseno(datos, controles)
+    return ols_hc1(diferencia, X, nombres)
+
+
 def tabla_overconfidence(numeros=range(1, 9), controles=CONTROLES):
     """
     Corre las dos regresiones en cada escenario y arma la tabla de resultados.
@@ -172,6 +189,7 @@ def tabla_overconfidence(numeros=range(1, 9), controles=CONTROLES):
 
         bruto = regresion_rendimiento(datos, "retorno_bruto", controles)
         neto = regresion_rendimiento(datos, "retorno_neto", controles)
+        contraste = regresion_contraste(datos, controles)
         j = 1   # posicion del turnover en el vector de coeficientes
 
         filas.append({
@@ -181,6 +199,7 @@ def tabla_overconfidence(numeros=range(1, 9), controles=CONTROLES):
             "beta_neto": neto["beta"][j], "se_neto": neto["se"][j],
             "t_neto": neto["t"][j], "p_neto": neto["p"][j],
             "diferencia": neto["beta"][j] - bruto["beta"][j],
+            "se_diferencia": contraste["se"][j], "t_diferencia": contraste["t"][j],
             "turnover_medio": datos["turnover_periodo"].mean(),
             "desv_turnover": datos["turnover_periodo"].std(),
             "r2_neto": neto["r2"], "n": neto["n"],

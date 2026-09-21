@@ -19,6 +19,7 @@ import pandas as pd
 from escenarios import ESCENARIOS
 from estimadores import (tabla_disposition, conteos_sinteticos,
                           estimar_disposition, valor_teorico)
+from regresion import tabla_overconfidence
 
 CARPETA_REPORTE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "report")
 
@@ -194,6 +195,76 @@ def figura_validacion(casos=((0.06, 0.03), (0.04, 0.04), (0.10, 0.02)),
         columna_texto=None)
 
 
+# ---------------------------------------------------------------------------
+# Figura 4 -- tabla principal del Paso 8
+# ---------------------------------------------------------------------------
+def figura_overconfidence():
+    est = tabla_overconfidence().set_index("escenario")
+    cfg = {c["num"]: c for c in ESCENARIOS}
+
+    encabezados = ["#", "Escenario", "δ", "κ", "β bruto", "t", "β neto", "t",
+                   "β neto − β bruto", "EE", "Lectura"]
+    filas, resaltar = [], []
+    for i, num in enumerate(est.index):
+        r, c = est.loc[num], cfg[num]
+        if abs(r["t_bruto"]) > 2.0:
+            lectura = "Causalidad reversa"
+            resaltar.append(i)
+        elif r["t_neto"] < -1.9:
+            lectura = "Costos detectables"
+        else:
+            lectura = "Costos no detectables"
+        filas.append([
+            str(num), NOMBRE_CORTO[num], "%.1f" % c["delta"], "%.1f" % c["kappa"],
+            _fmt(r["beta_bruto"], 5, signo=True), "%.2f" % r["t_bruto"],
+            _fmt(r["beta_neto"], 5, signo=True), "%.2f" % r["t_neto"],
+            _fmt(r["diferencia"], 5, signo=True), _fmt(r["se_diferencia"], 5),
+            lectura,
+        ])
+
+    return _tabla_png(
+        encabezados, filas,
+        "Estimador de sobreconfianza: regresión de turnover, bruto contra neto",
+        "Errores estándar robustos HC1, una observación por cuenta. Controles: log del tamaño de cartera, "
+        "posiciones promedio y beta realizada. Sombreados: escenarios donde la pendiente bruta no es cero.",
+        "tabla_overconfidence.png", filas_resaltadas=resaltar, columnas_negritas=(4, 8), ancho=17.0)
+
+
+# ---------------------------------------------------------------------------
+# Figura 5 -- diagnostico: el efecto de composicion
+# ---------------------------------------------------------------------------
+# Valores ANTES del cambio de anclaje. Provienen de la corrida del commit
+# 564f12e, anterior a anclar el tamano de posicion al valor actual de la
+# cartera. Se dejan escritos aqui porque el codigo actual ya no los reproduce;
+# quien quiera verificarlos puede situarse en ese commit y correr regresion.py.
+BETA_BRUTO_ANTES = {1: (-0.00822, -2.99), 4: (-0.00148, -1.21),
+                     5: (-0.00215, -1.81), 3: (0.02470, 8.88)}
+
+
+def figura_composicion():
+    est = tabla_overconfidence().set_index("escenario")
+    etiqueta = {1: "Nulo (δ=0, κ=0)", 4: "Turnover bajo (κ=0.3)",
+                5: "Turnover alto (κ=0.8)", 3: "Disposition alta (δ=0.8)"}
+
+    encabezados = ["#", "Escenario", "β bruto antes", "t", "β bruto después", "t", "Diagnóstico"]
+    filas = []
+    for num in (1, 4, 5, 3):
+        antes, t_antes = BETA_BRUTO_ANTES[num]
+        desp, t_desp = est.loc[num, "beta_bruto"], est.loc[num, "t_bruto"]
+        diag = "Persiste: es causalidad reversa" if abs(t_desp) > 2 else "Desaparece: era composición"
+        filas.append([str(num), etiqueta[num],
+                      _fmt(antes, 5, signo=True), "%.2f" % t_antes,
+                      _fmt(desp, 5, signo=True), "%.2f" % t_desp, diag])
+
+    return _tabla_png(
+        encabezados, filas,
+        "Diagnóstico de la pendiente bruta: efecto del anclaje del tamaño de posición",
+        "Antes: el monto por posición se anclaba al capital inicial Wᵢ/nᵢ. Después: al valor actual de la cartera. "
+        "PGR y PLR no cambian con este ajuste.",
+        "tabla_composicion.png", filas_resaltadas=(3,), columnas_negritas=(4,), ancho=14.5)
+
+
 if __name__ == "__main__":
-    for f in (figura_disposition, figura_robustez, figura_validacion):
+    for f in (figura_disposition, figura_robustez, figura_validacion,
+              figura_overconfidence, figura_composicion):
         print("generada:", os.path.basename(f()))
