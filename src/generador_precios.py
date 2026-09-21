@@ -2,15 +2,6 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-#Parametros
-n_days = 500
-n_assets = 50
-initial_price = 100.0
-mu_annual = 0.08
-sigma_annual = 0.20
-sigma_market_annual = 0.15
-print(f'Parametros: {n_days} Días, {n_assets} Activos, Precio inicial de los activos {initial_price}, Rentabilidad anual {mu_annual}, Volatilidad anual {sigma_annual}, Volatilidad anual del mercado {sigma_market_annual}')
-
 #Usamos un rendimiento anual del 8% para reflejar los promedios históricos de la renta variable a largo plazo y una volatilidad del 20%
 #para simular la incertidumbre bursátil real necesaria para activar los sesgos conductuales.
 
@@ -58,17 +49,28 @@ def generador_de_precios(n_days, n_assets, initial_price,
     )
     return df_prices
 
-df_prices = generador_de_precios(
-    n_days=n_days,
-    n_assets=n_assets,
-    initial_price=initial_price,
-    mu_annual=mu_annual,
-    sigma_annual=sigma_annual,
-    sigma_market_annual=sigma_market_annual,
-    seed=2024
-)
-print(df_prices.head())
-print(df_prices.tail())
 
-plt.plot(df_prices)
-plt.show()
+if __name__ == "__main__":
+    #Parametros
+    n_days = 500
+    n_assets = 50
+    initial_price = 100.0
+    mu_annual = 0.08
+    sigma_annual = 0.20
+    sigma_market_annual = 0.15
+    print(f'Parametros: {n_days} Días, {n_assets} Activos, Precio inicial de los activos {initial_price}, Rentabilidad anual {mu_annual}, Volatilidad anual {sigma_annual}, Volatilidad anual del mercado {sigma_market_annual}')
+
+    df_prices = generador_de_precios(
+        n_days=n_days,
+        n_assets=n_assets,
+        initial_price=initial_price,
+        mu_annual=mu_annual,
+        sigma_annual=sigma_annual,
+        sigma_market_annual=sigma_market_annual,
+        seed=2024
+    )
+    print(df_prices.head())
+    print(df_prices.tail())
+
+    plt.plot(df_prices)
+    plt.show()
